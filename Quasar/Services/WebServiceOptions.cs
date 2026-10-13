@@ -44,6 +44,11 @@ public sealed class WebServiceOptions
 
     public bool DisableServerHealthMonitoring { get; init; }
 
+    // Mayhem remote-host architecture: TX runs the control plane only.
+    // This does not prevent Quasar from preparing cluster artifacts, but
+    // prohibits launching local standalone game server processes.
+    public bool ControllerOnly { get; init; }
+
     public bool OwnManifest { get; init; } = true;
 
     public bool PreserveManagedServersOnShutdown { get; init; } = true;
@@ -136,6 +141,12 @@ public sealed class WebServiceOptions
         if (!bool.TryParse(disableServerHealthMonitoringValue, out var disableServerHealthMonitoring))
             disableServerHealthMonitoring = isDevelopment;
 
+        var controllerOnlyValue = Environment.GetEnvironmentVariable("QUASAR_CONTROLLER_ONLY")
+                                  ?? section["ControllerOnly"]
+                                  ?? "false";
+        if (!bool.TryParse(controllerOnlyValue, out var controllerOnly))
+            controllerOnly = false;
+
         var advertisedHost = host switch
         {
             "0.0.0.0" => "127.0.0.1",
@@ -207,6 +218,7 @@ public sealed class WebServiceOptions
             LoggingMinimumLevel = loggingMinimumLevel,
             IsDevelopment = isDevelopment,
             DisableServerHealthMonitoring = disableServerHealthMonitoring,
+            ControllerOnly = controllerOnly,
             BaseUrl = baseUrl,
             ListenUrl = $"http://{host}:{port}",
             OwnManifest = ownManifest,

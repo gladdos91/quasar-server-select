@@ -391,6 +391,33 @@ internal sealed class StandaloneServerManager : IDisposable
         finally { _gate.Release(); }
     }
 
+    public async Task<StandaloneServerStatus> ForceStopAsync(string id, CancellationToken cancellationToken)
+    {
+        _ = Read(id);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!TryAdoptExistingProcess(id)) return Status(id);
+            var process = _processes[id];
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            string pidFile = Path.Combine(Root(id), "magnetar-config", "magnetar.pid");
+            if (File.Exists(pidFile))
+            {
+                var lines = File.ReadAllLines(pidFile);
+                if (lines.Length > 0 && int.TryParse(lines[0], out var pid) && pid == process.Id)
+                    File.Delete(pidFile);
+            }
+            _processes.Remove(id);
+            process.Dispose();
+            return Status(id);
+        }
+        finally { _gate.Release(); }
+    }
+
     public StandaloneServerLog Logs(string id)
     {
         _ = Read(id);

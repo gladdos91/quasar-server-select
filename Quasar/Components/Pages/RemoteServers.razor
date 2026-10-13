@@ -83,6 +83,8 @@
                 <MudTd DataLabel="Actions">
                     <MudButton Size="Size.Small" OnClick="@(() => CommandAsync(context.ServerId, "provision"))"
                                Disabled="@(_busy || context.Running)">Install / update runtime</MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => CommandAsync(context.ServerId, "world"))"
+                               Disabled="@(_busy || context.Running || !context.Provisioned || context.WorldReady)">Create test world</MudButton>
                     <MudButton Size="Size.Small" Color="Color.Success"
                                OnClick="@(() => CommandAsync(context.ServerId, "start"))"
                                Disabled="@(_busy || context.Running || !context.Provisioned || !context.WorldReady)">Start</MudButton>

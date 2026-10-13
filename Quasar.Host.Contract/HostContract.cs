@@ -48,7 +48,8 @@ public sealed record HostStatus(
     bool GatewayStopFencing = false,
     bool SteamClientLibrary = false,
     DateTimeOffset? StartedAt = null,
-    string[]? Warnings = null);
+    string[]? Warnings = null,
+    bool MayhemStandaloneSupported = false);
 
 /// <summary>Result of staging Valve's steamclient.so for the Gateway's Steam frontend on this Host.</summary>
 public sealed record HostSteamClientLibrary(string Path, string Sha256, bool Installed);

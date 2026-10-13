@@ -47,6 +47,36 @@ internal sealed class StandaloneServerManager : IDisposable
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+    private bool TryAdoptExistingProcess(string id)
+    {
+        if (_processes.TryGetValue(id, out var known) && !known.HasExited) return true;
+        string pidFile = Path.Combine(Root(id), "magnetar-config", "magnetar.pid");
+        if (!File.Exists(pidFile)) return false;
+        var lines = File.ReadAllLines(pidFile);
+        if (lines.Length < 2 || !int.TryParse(lines[0].Trim(), out int pid))
+            throw new InvalidOperationException("Invalid Magnetar PID file; refusing to launch a duplicate.");
+        if (!Path.GetFullPath(lines[1].Trim()).Equals(Path.Combine(Root(id), "data"), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Magnetar PID file belongs to another instance.");
+        try
+        {
+            var process = Process.GetProcessById(pid);
+            string? actual = process.MainModule?.FileName;
+            string? expected = FindMagnetar();
+            if (actual is null || expected is null ||
+                !Path.GetFullPath(actual).Equals(Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase))
+            {
+                process.Dispose();
+                throw new InvalidOperationException("Magnetar PID could not be validated. Refusing to launch duplicate.");
+            }
+            _processes[id] = process;
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false; // PID file outlived the exited Magnetar process.
+        }
+    }
+
     public StandaloneServerStatus Status(string id)
     {
         var spec = Read(id);
@@ -56,7 +86,8 @@ internal sealed class StandaloneServerManager : IDisposable
                            Directory.Exists(Path.Combine(_runtime, "DedicatedServer", "DedicatedServer64"));
         bool worldReady = Directory.Exists(world) &&
                           File.Exists(Path.Combine(serverRoot, "data", "SpaceEngineers-Dedicated.cfg"));
-        bool running = _processes.TryGetValue(id, out var process) && !process.HasExited;
+        bool running = TryAdoptExistingProcess(id);
+        _processes.TryGetValue(id, out var process);
         return new(spec.ServerId, spec.Name, spec.WorldName, spec.Port, running,
             provisioned, worldReady, spec.AutoStart, running ? process!.Id : null,
             running ? "Running on this Host" : !provisioned ? "Runtime not provisioned" :
@@ -306,7 +337,7 @@ internal sealed class StandaloneServerManager : IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (_processes.TryGetValue(id, out var existing) && !existing.HasExited) return Status(id);
+            if (TryAdoptExistingProcess(id)) return Status(id);
             var status = Status(id);
             if (!status.Provisioned || !status.WorldReady)
                 throw new InvalidOperationException("Provision Magnetar/DS and prepare the isolated test world/config before starting.");

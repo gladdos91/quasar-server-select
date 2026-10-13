@@ -1,0 +1,32 @@
+name: mayhem remote host compile
+
+on:
+  push:
+    branches: [feature/remote-standalone-hosts]
+    paths:
+      - "Quasar.Host/**"
+      - "Quasar.Host.Contract/**"
+      - "Quasar/Services/ClusterHostClient.cs"
+      - "Quasar/Components/Pages/RemoteServers.razor"
+      - ".github/workflows/mayhem-remote-host-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build Host contracts
+        run: dotnet build Quasar.Host.Contract/Quasar.Host.Contract.csproj --configuration Release
+      - name: Build Host executor
+        run: dotnet build Quasar.Host/Quasar.Host.csproj --configuration Release

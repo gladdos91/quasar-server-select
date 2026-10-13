@@ -15,6 +15,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject QuasarPermissionService Permissions
+@inject WebServiceOptions WebOptions
 
 @if (!Embedded)
 {
@@ -33,7 +34,7 @@
         <div class="quasar-dashboard-actions">
             @if (!HideCreateActions)
             {
-                <button type="button" class="quasar-button quasar-button-primary" @onclick="OpenCreateDialogAsync"><QuasarIcon Icon="@QuasarIcons.Add" />New server</button>
+                <button type="button" class="quasar-button quasar-button-primary" disabled="@WebOptions.ControllerOnly" title="Controller-only: remote standalone servers are not yet implemented." @onclick="OpenCreateDialogAsync"><QuasarIcon Icon="@QuasarIcons.Add" />New server</button>
                 <AuthorizeView Policy="@QuasarPolicyNames.ClusterManage"><a href="/clusters/new" class="quasar-button"><QuasarIcon Icon="@QuasarIcons.AccountTree" />New cluster</a></AuthorizeView>
             }
             @HeaderActions

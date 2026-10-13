@@ -5,6 +5,7 @@
 @inject ClusterHostTunnels Tunnels
 @inject ClusterHostClient Client
 @inject ISnackbar Snackbar
+@inject IDialogService Dialogs
 
 <PageTitle>Remote standalone servers</PageTitle>
 <QuasarPageHeading Section="Infrastructure">
@@ -88,6 +89,9 @@
                     <MudButton Size="Size.Small" Color="Color.Success"
                                OnClick="@(() => CommandAsync(context.ServerId, "start"))"
                                Disabled="@(_busy || context.Running || !context.Provisioned || !context.WorldReady)">Start</MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => ConfirmForceStopAsync(context.ServerId))"
+                               Disabled="@(_busy || !context.Running)">Force stop (unsaved)</MudButton>
                     <MudButton Size="Size.Small" OnClick="@(() => LogsAsync(context.ServerId))"
                                Disabled="_busy">Logs</MudButton>
                 </MudTd>
@@ -195,6 +199,15 @@
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; _progress = ""; }
+    }
+
+    private async Task ConfirmForceStopAsync(string id)
+    {
+        bool? confirmed = await Dialogs.ShowMessageBoxAsync(
+            "Force stop this test server?",
+            "This immediately terminates Magnetar and may lose unsaved world progress. Only use it for disposable test worlds.",
+            yesText: "Force stop (unsaved)", cancelText: "Cancel");
+        if (confirmed == true) await CommandAsync(id, "force-stop");
     }
 
     private async Task LogsAsync(string id)

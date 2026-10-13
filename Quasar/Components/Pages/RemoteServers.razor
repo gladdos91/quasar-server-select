@@ -1,0 +1,188 @@
+@page "/remote-servers"
+@attribute [Authorize(Policy = QuasarPolicyNames.CanEditServers)]
+@using HostContract = Quasar.Host.Contract.V1
+@inject ClusterHostCatalog HostCatalog
+@inject ClusterHostTunnels Tunnels
+@inject ClusterHostClient Client
+@inject ISnackbar Snackbar
+
+<PageTitle>Remote standalone servers</PageTitle>
+<QuasarPageHeading Section="Infrastructure">
+    <Title>Remote standalone servers</Title>
+    <Description>Deploy Magnetar on an enrolled Windows Host. TX is controller-only and does not run game processes.</Description>
+</QuasarPageHeading>
+
+<MudAlert Severity="Severity.Info" Class="mb-3">
+    Mayhem standalone beta: all data is kept in the selected Host executor's private runtime folder.
+    This is isolated from AMP, Torch, and Nexus. Import a disposable world before starting.
+    Safe remote Windows stop/save and game-config editing are being validated.
+</MudAlert>
+
+<section class="quasar-panel pa-4 mb-4">
+    <h2 class="quasar-text quasar-type-h6 mb-3">New remote game server</h2>
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudSelect T="string" Label="Target host machine" @bind-Value="_hostId"
+                       HelperText="Only connected Host executors can accept servers. TX is not a selectable game host.">
+                @foreach (var machine in HostCatalog.GetAll())
+                {
+                    <MudSelectItem T="string" Value="@machine.Id" Disabled="@(!Tunnels.IsConnected(machine.Id))">
+                        @machine.Name (@machine.Id) — @(Tunnels.IsConnected(machine.Id) ? "Connected" : "Offline")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField T="string" @bind-Value="_id" Label="Server ID" HelperText="Example: mayhem-test-01. Lowercase letters, numbers and hyphens." />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField T="string" @bind-Value="_name" Label="Server name" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField T="string" @bind-Value="_world" Label="World save folder" HelperText="Example: TestWorld (a folder under this new server's Saves directory)" />
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudNumericField T="int" @bind-Value="_port" Label="UDP port" Min="1024" Max="65535" />
+        </MudItem>
+    </MudGrid>
+    <div class="quasar-layout quasar-layout-row quasar-align-center quasar-gap-2 mt-3">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAsync" Disabled="@(_busy || SelectedHost is null || !Tunnels.IsConnected(_hostId))">Create on selected Host</MudButton>
+        <MudButton Variant="Variant.Outlined" OnClick="RefreshAsync" Disabled="@(_busy || SelectedHost is null)">Refresh</MudButton>
+    </div>
+</section>
+
+@if (_busy)
+{
+    <MudProgressLinear Indeterminate="true" Class="mb-3" />
+    <p class="quasar-text quasar-type-caption">@_progress</p>
+}
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-3">@_error</MudAlert>
+}
+
+<section class="quasar-panel pa-4">
+    <h2 class="quasar-text quasar-type-h6 mb-3">Servers on @(_hostId.Length == 0 ? "selected host" : _hostId)</h2>
+    @if (_servers.Length == 0)
+    {
+        <p>No remote standalone servers were reported by this Host.</p>
+    }
+    else
+    {
+        <MudTable T="HostContract.StandaloneServerStatus" Items="_servers" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Server</MudTh>
+                <MudTh>Port</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Server"><b>@context.Name</b> (@context.ServerId)</MudTd>
+                <MudTd DataLabel="Port">@context.Port</MudTd>
+                <MudTd DataLabel="Status">@context.Message</MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudButton Size="Size.Small" OnClick="@(() => CommandAsync(context.ServerId, "provision"))"
+                               Disabled="@(_busy || context.Running)">Install / update runtime</MudButton>
+                    <MudButton Size="Size.Small" Color="Color.Success"
+                               OnClick="@(() => CommandAsync(context.ServerId, "start"))"
+                               Disabled="@(_busy || context.Running || !context.Provisioned || !context.WorldReady)">Start</MudButton>
+                    <MudButton Size="Size.Small" OnClick="@(() => LogsAsync(context.ServerId))"
+                               Disabled="_busy">Logs</MudButton>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</section>
+
+@if (_logs is not null)
+{
+    <section class="quasar-panel pa-4 mt-3">
+        <div class="quasar-layout quasar-layout-row quasar-align-center quasar-justify-spacebetween">
+            <h2 class="quasar-text quasar-type-h6">Latest Magnetar logs</h2>
+            <MudButton OnClick="@(() => _logs = null)">Close</MudButton>
+        </div>
+        <pre style="white-space: pre-wrap; max-height: 400px; overflow: auto">@_logs</pre>
+    </section>
+}
+
+@code {
+    private string _hostId = "";
+    private string _id = "mayhem-test-01";
+    private string _name = "Mayhem Magnetar Test 01";
+    private string _world = "TestWorld";
+    private int _port = 29400;
+    private bool _busy;
+    private string _progress = "";
+    private string? _error;
+    private string? _logs;
+    private HostContract.StandaloneServerStatus[] _servers = [];
+
+    private EnrolledClusterHost? SelectedHost => HostCatalog.Get(_hostId);
+    private ClusterDefinition GetTarget()
+    {
+        var host = SelectedHost ?? throw new InvalidOperationException("Select an enrolled Host.");
+        if (!Tunnels.IsConnected(host.Id)) throw new InvalidOperationException("Host is offline. There is no local fallback.");
+        return new ClusterDefinition
+        {
+            UniqueName = host.Id,
+            HostCommandUrl = host.CommandUrl,
+            HostCommandTokenEnvironmentVariable = host.CredentialReference
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var first = HostCatalog.GetAll().FirstOrDefault(host => Tunnels.IsConnected(host.Id));
+        _hostId = first?.Id ?? "";
+        if (first is not null) await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _error = null;
+        if (SelectedHost is null) { _servers = []; return; }
+        try
+        {
+            _servers = (await Client.ListStandaloneAsync(GetTarget(), CancellationToken.None)).Data;
+        }
+        catch (Exception ex) { _servers = []; _error = ex.Message; }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy) return;
+        _busy = true; _error = null; _progress = "Creating server on " + _hostId;
+        try
+        {
+            var spec = new HostContract.StandaloneServerSpec(_id, _name, _world, _port);
+            HostContract.StandaloneServerSpec.Validate(spec);
+            await Client.CreateStandaloneAsync(GetTarget(), spec, CancellationToken.None);
+            Snackbar.Add("Created " + spec.ServerId + " on " + _hostId + ". Provision runtime next.", Severity.Success);
+            await RefreshAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; _progress = ""; }
+    }
+
+    private async Task CommandAsync(string id, string command)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        _progress = command == "provision" ? "Downloading and installing isolated Windows SteamCMD, Dedicated Server and Magnetar. This can take a long time." : "Starting " + id;
+        try
+        {
+            await Client.CommandStandaloneAsync(GetTarget(), id, command, CancellationToken.None);
+            Snackbar.Add(command + " finished for " + id, Severity.Success);
+            await RefreshAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; _progress = ""; }
+    }
+
+    private async Task LogsAsync(string id)
+    {
+        _error = null;
+        try { _logs = (await Client.ReadStandaloneLogsAsync(GetTarget(), id, CancellationToken.None)).Data.Text; }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

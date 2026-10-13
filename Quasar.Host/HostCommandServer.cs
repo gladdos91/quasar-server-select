@@ -450,6 +450,7 @@ internal sealed class HostCommandServer : IDisposable
                     "world" => await _standalone.PrepareWorldAsync(id, cancellationToken),
                     "start" => await _standalone.StartAsync(id, cancellationToken),
                     "stop" => await _standalone.StopAsync(id, cancellationToken),
+                    "force-stop" => await _standalone.ForceStopAsync(id, cancellationToken),
                     _ => throw new ArgumentException("Unknown standalone command."),
                 };
                 await WriteAsync(context, 200, status, cancellationToken);

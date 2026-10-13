@@ -447,6 +447,7 @@ internal sealed class HostCommandServer : IDisposable
                 Quasar.Host.Contract.V1.StandaloneServerStatus status = parts[1] switch
                 {
                     "provision" => await _standalone.ProvisionAsync(id, cancellationToken),
+                    "world" => await _standalone.PrepareWorldAsync(id, cancellationToken),
                     "start" => await _standalone.StartAsync(id, cancellationToken),
                     "stop" => await _standalone.StopAsync(id, cancellationToken),
                     _ => throw new ArgumentException("Unknown standalone command."),

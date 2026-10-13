@@ -50,13 +50,20 @@
     <div class="quasar-dashboard-actions">
         <button type="button" class="quasar-button" disabled="@ShowSetupWizard" @onclick="ShowSetupWizardAgain"><QuasarIcon Icon="@QuasarIcons.RestartAlt" />Setup guide</button>
         <button type="button" class="quasar-button" @onclick="OpenExistingServerImportDialogAsync"><QuasarIcon Icon="@QuasarIcons.MoveToInbox" />Import server</button>
-        <button type="button" class="quasar-button quasar-button-primary" disabled="@WebOptions.ControllerOnly" title="Controller-only: remote standalone servers are not yet implemented." @onclick="OpenCreateServerDialogAsync"><QuasarIcon Icon="@QuasarIcons.Add" />New server</button>
+        @if (WebOptions.ControllerOnly)
+        {
+            <a class="quasar-button quasar-button-primary" href="/remote-servers"><QuasarIcon Icon="@QuasarIcons.Add" />New remote server</a>
+        }
+        else
+        {
+            <button type="button" class="quasar-button quasar-button-primary" @onclick="OpenCreateServerDialogAsync"><QuasarIcon Icon="@QuasarIcons.Add" />New server</button>
+        }
     </div>
 </div>
 
 @if (WebOptions.ControllerOnly)
 {
-    <div class="mb-4 quasar-notice quasar-notice-info" role="status">Mayhem controller-only mode: standalone server creation and local game process launches are disabled. Remote standalone provisioning is under development; connected Hosts can still be used in the cluster wizard.</div>
+    <div class="mb-4 quasar-notice quasar-notice-info" role="status">Mayhem controller-only mode: local game process launches are disabled. Use New remote server to create a test instance on an enrolled Windows Host.</div>
 }
 
 @if (Supervisor.HealthMonitoringDisabled)

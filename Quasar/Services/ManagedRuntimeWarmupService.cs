@@ -18,7 +18,7 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
     {
         _runtimeResolver = runtimeResolver;
         _logger = logger;
-        _options = options ?? new WebServiceOptions;
+        _options = options ?? new WebServiceOptions();
     }
 
     public event Action? Changed;

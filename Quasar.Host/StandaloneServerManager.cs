@@ -70,9 +70,14 @@ internal sealed class StandaloneServerManager : IDisposable
         try
         {
             if (File.Exists(Config(spec.ServerId))) throw new InvalidOperationException("This server ID already exists.");
-            if (List().Any(s => s.Port == spec.Port)) throw new InvalidOperationException("Game port is already assigned to a standalone server on this Host.");
-            if (IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners().Any(ep => ep.Port == spec.Port))
-                throw new InvalidOperationException("UDP port is already in use on this Host.");
+            int[] requestedPorts = [spec.Port, spec.Port + 1000, spec.Port + 2000];
+            if (List().Any(s => new[] { s.Port, s.Port + 1000, s.Port + 2000 }
+                .Intersect(requestedPorts).Any()))
+                throw new InvalidOperationException("The requested game, Steam or Remote API ports overlap another managed server on this Host.");
+            var occupied = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners().Select(ep => ep.Port)
+                .Concat(IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Select(ep => ep.Port)).ToHashSet();
+            if (requestedPorts.Any(occupied.Contains))
+                throw new InvalidOperationException("The requested game, Steam or Remote API port is in use on this Host.");
             // Prevent creating a server that starts automatically before its world is prepared.
             spec = spec with { AutoStart = false };
             Directory.CreateDirectory(Path.Combine(Root(spec.ServerId), "data", "Saves"));
@@ -305,8 +310,11 @@ internal sealed class StandaloneServerManager : IDisposable
             var status = Status(id);
             if (!status.Provisioned || !status.WorldReady)
                 throw new InvalidOperationException("Provision Magnetar/DS and prepare the isolated test world/config before starting.");
-            if (IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners().Any(ep => ep.Port == spec.Port))
-                throw new InvalidOperationException("Game UDP port is already occupied on NY-01.");
+            int[] requiredPorts = [spec.Port, spec.Port + 1000, spec.Port + 2000];
+            var used = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners().Select(ep => ep.Port)
+                .Concat(IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Select(ep => ep.Port)).ToHashSet();
+            if (requiredPorts.Any(used.Contains))
+                throw new InvalidOperationException("A game, Steam or Remote API port is occupied on the selected Host.");
             string root = Root(id);
             string executable = FindMagnetar()!;
             string ds64 = Path.Combine(_runtime, "DedicatedServer", "DedicatedServer64");

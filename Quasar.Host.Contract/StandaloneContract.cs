@@ -24,8 +24,8 @@ public sealed record StandaloneServerSpec(
         if (string.IsNullOrWhiteSpace(spec.WorldName) || spec.WorldName.Length > 96 ||
             spec.WorldName is "." or ".." || spec.WorldName.IndexOfAny(['/', '\\', ':']) >= 0)
             throw new ArgumentException("World name must be a simple folder name.");
-        if (spec.Port is < 1024 or > 65535)
-            throw new ArgumentException("Game UDP port must be between 1024 and 65535.");
+        if (spec.Port is < 1024 or > 63000)
+            throw new ArgumentException("Game UDP port must be between 1024 and 63000 (reserves Steam/RemoteApi offset ports).");
     }
 }
 

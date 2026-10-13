@@ -26,6 +26,28 @@ public sealed partial class ClusterHostClient
             request.Headers.Host = "127.0.0.1:" + request.RequestUri.Port;
     }
 
+    public Task<HostContract.HostEnvelope<HostContract.StandaloneServerStatus[]>> ListStandaloneAsync(
+        ClusterDefinition target, CancellationToken token) =>
+        SendAsync<HostContract.StandaloneServerStatus[]>(target, HttpMethod.Get,
+            HostContract.HostProtocol.RoutePrefix + "/standalone", null, token);
+
+    public Task<HostContract.HostEnvelope<HostContract.StandaloneServerStatus>> CreateStandaloneAsync(
+        ClusterDefinition target, HostContract.StandaloneServerSpec spec, CancellationToken token) =>
+        SendAsync<HostContract.StandaloneServerStatus>(target, HttpMethod.Put,
+            HostContract.HostProtocol.RoutePrefix + "/standalone/" + Uri.EscapeDataString(spec.ServerId), spec, token);
+
+    public Task<HostContract.HostEnvelope<HostContract.StandaloneServerStatus>> CommandStandaloneAsync(
+        ClusterDefinition target, string id, string command, CancellationToken token) =>
+        SendAsync<HostContract.StandaloneServerStatus>(target, HttpMethod.Post,
+            HostContract.HostProtocol.RoutePrefix + "/standalone/" + Uri.EscapeDataString(id) + "/" + command,
+            null, token, longRunning: command == "provision");
+
+    public Task<HostContract.HostEnvelope<HostContract.StandaloneServerLog>> ReadStandaloneLogsAsync(
+        ClusterDefinition target, string id, CancellationToken token) =>
+        SendAsync<HostContract.StandaloneServerLog>(target, HttpMethod.Get,
+            HostContract.HostProtocol.RoutePrefix + "/standalone/" + Uri.EscapeDataString(id) + "/logs",
+            null, token);
+
     public Task<HostContract.HostEnvelope<HostContract.HostStatus>> GetStatusAsync(
         ClusterDefinition cluster, CancellationToken cancellationToken) => SendAsync<HostContract.HostStatus>(
         cluster, HttpMethod.Get, HostContract.HostProtocol.StatusRoute, null, cancellationToken);

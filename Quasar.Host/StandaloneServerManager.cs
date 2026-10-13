@@ -208,6 +208,93 @@ internal sealed class StandaloneServerManager : IDisposable
         return tail;
     }
 
+    public async Task<StandaloneServerStatus> PrepareWorldAsync(string id, CancellationToken cancellationToken)
+    {
+        var spec = Read(id);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            string serverRoot = Root(id);
+            string data = Path.Combine(serverRoot, "data");
+            string saves = Path.Combine(data, "Saves");
+            string world = Path.Combine(saves, spec.WorldName);
+            if (Directory.Exists(world))
+                throw new InvalidOperationException("World folder already exists; do not overwrite an existing save.");
+            string contentRoot = Path.Combine(_runtime, "DedicatedServer", "Content", "CustomWorlds");
+            if (!Directory.Exists(contentRoot))
+                throw new DirectoryNotFoundException("Install Dedicated Server runtime before creating a world.");
+            var template = Directory.EnumerateDirectories(contentRoot, "*", SearchOption.AllDirectories)
+                .Where(dir => File.Exists(Path.Combine(dir, "Sandbox.sbc")) &&
+                    File.Exists(Path.Combine(dir, "Sandbox_config.sbc")))
+                .OrderByDescending(dir => Path.GetFileName(dir).Contains("Star", StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault();
+            if (template is null)
+                throw new InvalidOperationException("No usable stock world with Sandbox.sbc and Sandbox_config.sbc was found.");
+            string staging = Path.Combine(saves, ".creating-" + spec.ServerId);
+            Directory.CreateDirectory(saves);
+            if (Directory.Exists(staging)) throw new InvalidOperationException("An interrupted world creation exists.");
+            try
+            {
+                CopyTree(template, staging);
+                var configFile = Path.Combine(staging, "Sandbox_config.sbc");
+                var worldConfig = System.Xml.Linq.XDocument.Load(configFile);
+                var sessionName = worldConfig.Descendants().FirstOrDefault(x => x.Name.LocalName == "SessionName");
+                if (sessionName is not null) sessionName.Value = spec.WorldName;
+                worldConfig.Save(configFile);
+                Directory.Move(staging, world);
+            }
+            catch
+            {
+                if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+                throw;
+            }
+
+            // Follow upstream Quasar's dedicated configuration + last-session structure.
+            System.Xml.Linq.XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
+            System.Xml.Linq.XNamespace xsd = "http://www.w3.org/2001/XMLSchema";
+            var cfg = new System.Xml.Linq.XDocument(
+                new System.Xml.Linq.XDeclaration("1.0", "utf-8", null),
+                new System.Xml.Linq.XElement("MyConfigDedicated",
+                    new System.Xml.Linq.XAttribute(System.Xml.Linq.XNamespace.Xmlns + "xsi", xsi),
+                    new System.Xml.Linq.XAttribute(System.Xml.Linq.XNamespace.Xmlns + "xsd", xsd),
+                    new System.Xml.Linq.XElement("SessionSettings",
+                        new System.Xml.Linq.XElement("OnlineMode", "PUBLIC"),
+                        new System.Xml.Linq.XElement("MaxPlayers", "8"),
+                        new System.Xml.Linq.XElement("GameMode", "Survival")),
+                    new System.Xml.Linq.XElement("IgnoreLastSession", "false"),
+                    new System.Xml.Linq.XElement("ServerPort", spec.Port),
+                    new System.Xml.Linq.XElement("SteamPort", spec.Port + 1000),
+                    new System.Xml.Linq.XElement("RemoteApiPort", spec.Port + 2000),
+                    new System.Xml.Linq.XElement("IP", "0.0.0.0"),
+                    new System.Xml.Linq.XElement("ServerName", spec.Name),
+                    new System.Xml.Linq.XElement("WorldName", spec.WorldName)));
+            cfg.Save(Path.Combine(data, "SpaceEngineers-Dedicated.cfg"));
+            var last = new System.Xml.Linq.XDocument(
+                new System.Xml.Linq.XDeclaration("1.0", "utf-8", null),
+                new System.Xml.Linq.XElement("MyObjectBuilder_LastSession",
+                    new System.Xml.Linq.XAttribute(System.Xml.Linq.XNamespace.Xmlns + "xsi", xsi),
+                    new System.Xml.Linq.XAttribute(System.Xml.Linq.XNamespace.Xmlns + "xsd", xsd),
+                    new System.Xml.Linq.XElement("Path", world),
+                    new System.Xml.Linq.XElement("IsContentWorlds", "false"),
+                    new System.Xml.Linq.XElement("IsOnline", "false"),
+                    new System.Xml.Linq.XElement("IsLobby", "false"),
+                    new System.Xml.Linq.XElement("GameName", spec.WorldName),
+                    new System.Xml.Linq.XElement("RelativePath", spec.WorldName)));
+            last.Save(Path.Combine(saves, "LastSession.sbl"));
+            return Status(id);
+        }
+        finally { _gate.Release(); }
+    }
+
+    private static void CopyTree(string source, string dest)
+    {
+        Directory.CreateDirectory(dest);
+        foreach (var file in Directory.EnumerateFiles(source))
+            File.Copy(file, Path.Combine(dest, Path.GetFileName(file)));
+        foreach (var dir in Directory.EnumerateDirectories(source))
+            CopyTree(dir, Path.Combine(dest, Path.GetFileName(dir)));
+    }
+
     public async Task<StandaloneServerStatus> StartAsync(string id, CancellationToken cancellationToken)
     {
         var spec = Read(id);

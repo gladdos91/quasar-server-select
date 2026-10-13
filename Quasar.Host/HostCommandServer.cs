@@ -516,7 +516,7 @@ internal sealed class HostCommandServer : IDisposable
             await WriteAsync(context, 200, new HostContract.HostStatus(
                 _config.ExecutorId, _config.HostId, attachments, _gateways.GetStatuses(),
                 GatewayStopFencing: true, SteamClientLibrary: true, StartedAt: Program.StartedAt,
-                Warnings: HostShutdown.Warnings(_config.HostId)), cancellationToken);
+                Warnings: HostShutdown.Warnings(_config.HostId), MayhemStandaloneSupported: OperatingSystem.IsWindows()), cancellationToken);
             return;
         }
 

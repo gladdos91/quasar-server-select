@@ -188,10 +188,15 @@ internal sealed class StandaloneServerManager : IDisposable
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Mayhem-Quasar-Host/1.0");
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
         response.EnsureSuccessStatusCode();
-        await using var output = File.Create(destination + ".partial");
-        await response.Content.CopyToAsync(output, token);
-        await output.FlushAsync(token);
-        File.Move(destination + ".partial", destination, true);
+        // Windows does not allow replacing/renaming a file while our write
+        // handle is open. Close the partial download before publishing it.
+        string partial = destination + ".partial";
+        await using (var output = File.Create(partial))
+        {
+            await response.Content.CopyToAsync(output, token);
+            await output.FlushAsync(token);
+        }
+        File.Move(partial, destination, true);
     }
 
     private string? FindMagnetar()

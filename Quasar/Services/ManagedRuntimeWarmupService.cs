@@ -6,6 +6,7 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
 {
     public static readonly TimeSpan MagnetarUpdateCheckPeriod = TimeSpan.FromHours(1);
     private readonly ManagedDedicatedServerRuntimeResolver _runtimeResolver;
+    private readonly WebServiceOptions _options;
     private readonly ILogger<ManagedRuntimeWarmupService> _logger;
     private readonly object _sync = new();
     private readonly SemaphoreSlim _runLock = new(1, 1);
@@ -13,10 +14,11 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
 
     public ManagedRuntimeWarmupService(
         ManagedDedicatedServerRuntimeResolver runtimeResolver,
-        ILogger<ManagedRuntimeWarmupService> logger)
+        ILogger<ManagedRuntimeWarmupService> logger, WebServiceOptions? options = null)
     {
         _runtimeResolver = runtimeResolver;
         _logger = logger;
+        _options = options ?? new WebServiceOptions();
     }
 
     public event Action? Changed;
@@ -64,6 +66,11 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_options.ControllerOnly)
+        {
+            SetState(ManagedRuntimeWarmupState.Complete, "Controller-only: local SteamCMD, Magnetar and Dedicated Server warmup skipped. Remote Hosts manage game runtimes.");
+            return;
+        }
         await RunWarmupAsync(stoppingToken);
 
         using var timer = new PeriodicTimer(MagnetarUpdateCheckPeriod);
@@ -81,6 +88,11 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
 
     private async Task RunWarmupAsync(CancellationToken stoppingToken)
     {
+        if (_options.ControllerOnly)
+        {
+            SetState(ManagedRuntimeWarmupState.Complete, "Controller-only: game runtime provisioning belongs to remote Hosts.");
+            return;
+        }
         if (!await _runLock.WaitAsync(0, stoppingToken))
             return;
 
@@ -114,6 +126,7 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
 
     private async Task RunMagnetarUpdateCheckAsync(CancellationToken stoppingToken)
     {
+        if (_options.ControllerOnly) return;
         if (!await _runLock.WaitAsync(0, stoppingToken))
             return;
 
@@ -141,6 +154,7 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
 
     private async Task RunDedicatedServerUpdateCheckAsync(CancellationToken stoppingToken)
     {
+        if (_options.ControllerOnly) return;
         if (!await _runLock.WaitAsync(0, stoppingToken))
             return;
 

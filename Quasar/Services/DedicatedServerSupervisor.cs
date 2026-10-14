@@ -199,6 +199,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     public async Task StartServerAsync(string uniqueName, CancellationToken cancellationToken = default)
     {
+        if (_options.ControllerOnly)
+            throw new InvalidOperationException(
+                "This Quasar instance is controller-only. Standalone game servers must run on a remote Host executor.");
         ManagedServerState? state;
         CancellationTokenSource? startCancellation = null;
         var restoreDeferred = false;
@@ -461,6 +464,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     public async Task BeginAdminRestartAsync(string uniqueName, CancellationToken cancellationToken = default)
     {
+        if (_options.ControllerOnly)
+            throw new InvalidOperationException(
+                "Controller-only Quasar cannot restart local standalone game processes.");
         var definition = _catalog.GetServer(uniqueName);
         if (definition is null)
             throw new InvalidOperationException($"Unknown Quasar server '{uniqueName}'.");
@@ -787,7 +793,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
                         affinityActions.Add((state.UniqueName, state.Definition.CpuAffinity, "ready"));
                 }
 
-                if (goalState == DedicatedServerGoalState.On)
+                // Local standalone reconciliation must never launch game processes
+                // on a controller-only machine, including persisted auto-start goals.
+                if (goalState == DedicatedServerGoalState.On && !_options.ControllerOnly)
                 {
                     if (!processActive && state.State == DedicatedServerProcessState.Stopped)
                     {
@@ -1053,6 +1061,11 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     private async Task StartProcessAsync(ManagedServerState state, CancellationToken cancellationToken)
     {
+        // Defense in depth: no current or future caller may bypass controller-only
+        // process isolation by invoking the launcher directly.
+        if (_options.ControllerOnly)
+            throw new InvalidOperationException(
+                "Controller-only Quasar cannot launch local game processes.");
         var definition = state.Definition;
         if (string.IsNullOrWhiteSpace(definition.WorldSaveName))
         {

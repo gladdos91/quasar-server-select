@@ -1,0 +1,46 @@
+name: mayhem remote host compile
+
+on:
+  push:
+    branches: [feature/remote-standalone-hosts]
+    paths:
+      - "Quasar.Host/**"
+      - "Quasar.Host.Contract/**"
+      - "Quasar/Services/ClusterHostClient.cs"
+      - "Quasar/Components/Pages/RemoteServers.razor"
+      - ".github/workflows/mayhem-remote-host-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Checkout diagnostic dependency
+        uses: actions/checkout@v4
+        with:
+          repository: CometWorks/error-reporting
+          ref: 4629caff434e35312e8c99c776e364e392142d5d
+          path: diagnostics-source
+      - name: Bootstrap diagnostic package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/bootstrap-diagnostics.ps1 -DiagnosticsProject 'diagnostics-source/Diagnostics/CometWorks.Diagnostics.csproj'
+      - name: Bootstrap diagnostic package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: scripts/bootstrap-diagnostics.sh diagnostics-source/Diagnostics/CometWorks.Diagnostics.csproj
+      - name: Build Host contracts
+        run: dotnet build Quasar.Host.Contract/Quasar.Host.Contract.csproj --configuration Release
+      - name: Build Host executor
+        run: dotnet build Quasar.Host/Quasar.Host.csproj --configuration Release

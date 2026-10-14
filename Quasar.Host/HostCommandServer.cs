@@ -293,6 +293,7 @@ internal sealed class HostCommandServer : IDisposable
     private readonly DeploymentActivation _deployments;
     private readonly DeploymentSnapshots _snapshots;
     private readonly DiagnosticCollector _diagnostics;
+    private readonly StandaloneServerManager _standalone;
     private CancellationTokenSource? _shutdown;
     private Task? _loop;
 
@@ -315,6 +316,7 @@ internal sealed class HostCommandServer : IDisposable
         _deployments = deployments ?? new DeploymentActivation(config.StateDirectory, config.HostId,
             attachments, gateways, new NodeActualizer(config.StateDirectory, config.HostId, _diagnostics), gatewayActualizer);
         _snapshots = new(config.StateDirectory, config.HostId, attachments, new NodeActualizer(config.StateDirectory, config.HostId, _diagnostics), gatewayActualizer);
+        _standalone = new StandaloneServerManager(config.StateDirectory);
         _listener.Prefixes.Add(command.Url.TrimEnd('/') + "/");
     }
 
@@ -339,6 +341,7 @@ internal sealed class HostCommandServer : IDisposable
         }
         _shutdown?.Dispose();
         _listener.Close();
+        _standalone.Dispose();
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -369,7 +372,7 @@ internal sealed class HostCommandServer : IDisposable
         try
         {
             // Candidate preparation writes only immutable directories and must not suspend executor heartbeats.
-            bool preparing = context.Request.Url?.AbsolutePath.StartsWith(HostContract.HostProtocol.RoutePrefix + "/conversion-inputs/", StringComparison.Ordinal) == true || context.Request.HttpMethod == "POST" &&
+            bool preparing = context.Request.Url?.AbsolutePath.StartsWith(HostContract.HostProtocol.RoutePrefix + "/standalone/", StringComparison.Ordinal) == true && context.Request.Url.AbsolutePath.EndsWith("/provision", StringComparison.Ordinal) || context.Request.Url?.AbsolutePath.StartsWith(HostContract.HostProtocol.RoutePrefix + "/conversion-inputs/", StringComparison.Ordinal) == true || context.Request.HttpMethod == "POST" &&
                 context.Request.Url?.AbsolutePath.StartsWith(HostContract.HostProtocol.RoutePrefix + "/deployment-preparations/", StringComparison.Ordinal) == true;
             bool diagnostics = context.Request.Url?.AbsolutePath.StartsWith(HostContract.HostProtocol.RoutePrefix + "/diagnostics/", StringComparison.Ordinal) == true;
             bool collecting = context.Request.Url?.AbsolutePath.StartsWith(HostContract.HostProtocol.RoutePrefix + "/deployment-references/", StringComparison.Ordinal) == true;
@@ -413,6 +416,53 @@ internal sealed class HostCommandServer : IDisposable
         }
 
         string path = context.Request.Url?.AbsolutePath.TrimEnd('/') ?? string.Empty;
+
+        string standalonePrefix = HostContract.HostProtocol.RoutePrefix + "/standalone";
+        if (path == standalonePrefix && context.Request.HttpMethod == "GET")
+        {
+            await WriteAsync(context, 200, _standalone.List(), cancellationToken);
+            return;
+        }
+        if (path.StartsWith(standalonePrefix + "/", StringComparison.Ordinal))
+        {
+            string route = path[(standalonePrefix.Length + 1)..];
+            string[] parts = route.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            string id = Uri.UnescapeDataString(parts[0]);
+            if (parts.Length == 1 && context.Request.HttpMethod == "GET")
+            {
+                await WriteAsync(context, 200, _standalone.Status(id), cancellationToken);
+                return;
+            }
+            if (parts.Length == 1 && context.Request.HttpMethod == "PUT")
+            {
+                var spec = await ReadJsonAsync<Quasar.Host.Contract.V1.StandaloneServerSpec>(
+                    context.Request, cancellationToken);
+                if (!string.Equals(id, spec.ServerId, StringComparison.Ordinal))
+                    throw new ArgumentException("Route ID does not match server definition.");
+                await WriteAsync(context, 200, await _standalone.CreateAsync(spec, cancellationToken), cancellationToken);
+                return;
+            }
+            if (parts.Length == 2 && context.Request.HttpMethod == "POST")
+            {
+                Quasar.Host.Contract.V1.StandaloneServerStatus status = parts[1] switch
+                {
+                    "provision" => await _standalone.ProvisionAsync(id, cancellationToken),
+                    "world" => await _standalone.PrepareWorldAsync(id, cancellationToken),
+                    "start" => await _standalone.StartAsync(id, cancellationToken),
+                    "stop" => await _standalone.StopAsync(id, cancellationToken),
+                    "force-stop" => await _standalone.ForceStopAsync(id, cancellationToken),
+                    _ => throw new ArgumentException("Unknown standalone command."),
+                };
+                await WriteAsync(context, 200, status, cancellationToken);
+                return;
+            }
+            if (parts.Length == 2 && parts[1] == "logs" && context.Request.HttpMethod == "GET")
+            {
+                await WriteAsync(context, 200, _standalone.Logs(id), cancellationToken);
+                return;
+            }
+        }
+
         string diagnosticsPrefix = HostContract.HostProtocol.RoutePrefix + "/diagnostics/";
         if (context.Request.HttpMethod == "PUT" && path == diagnosticsPrefix + "policy")
         {
@@ -467,7 +517,7 @@ internal sealed class HostCommandServer : IDisposable
             await WriteAsync(context, 200, new HostContract.HostStatus(
                 _config.ExecutorId, _config.HostId, attachments, _gateways.GetStatuses(),
                 GatewayStopFencing: true, SteamClientLibrary: true, StartedAt: Program.StartedAt,
-                Warnings: HostShutdown.Warnings(_config.HostId)), cancellationToken);
+                Warnings: HostShutdown.Warnings(_config.HostId), MayhemStandaloneSupported: OperatingSystem.IsWindows()), cancellationToken);
             return;
         }
 

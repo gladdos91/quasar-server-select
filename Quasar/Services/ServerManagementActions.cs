@@ -441,6 +441,16 @@ public sealed class ServerManagementActions(
 
     private async Task<bool> SaveDefinitionAsync(DedicatedServerDefinition definition, string successMessage)
     {
+        // Until the remote standalone executor is implemented, reject creation
+        // instead of silently placing the new game server on the TX controller.
+        if (options.ControllerOnly && string.IsNullOrWhiteSpace(definition.OriginalUniqueName))
+        {
+            snackbar.Add(
+                "Controller-only mode: remote standalone deployment is not implemented yet. " +
+                "No local game server was created. Existing enrolled Hosts remain available for clusters.",
+                Severity.Warning);
+            return false;
+        }
         var previousUniqueName = definition.OriginalUniqueName;
         if (!string.IsNullOrWhiteSpace(previousUniqueName) &&
             !string.Equals(previousUniqueName, definition.UniqueName, StringComparison.OrdinalIgnoreCase) &&

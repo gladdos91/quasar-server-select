@@ -22,6 +22,12 @@ public sealed class ClusterLocalHostUpdater(ClusterHostCatalog hosts, ClusterHos
 
     internal async Task EnsureLocalHostAsync(CancellationToken token)
     {
+        if (options.ControllerOnly)
+        {
+            _status = "Controller-only: local cluster Host installation is disabled.";
+            _error = null;
+            return;
+        }
         if (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
         {
             _status = "Automatic local cluster hosting requires Linux x64. Enroll a Linux host machine to run cluster processes.";
@@ -60,6 +66,12 @@ public sealed class ClusterLocalHostUpdater(ClusterHostCatalog hosts, ClusterHos
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (options.ControllerOnly)
+        {
+            _status = "Controller-only: local cluster Host updater is disabled.";
+            _error = null;
+            return;
+        }
         await Task.Yield();
         while (!stoppingToken.IsCancellationRequested)
         {
